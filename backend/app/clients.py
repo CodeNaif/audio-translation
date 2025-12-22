@@ -40,19 +40,22 @@ class GemmaClient:
         self.client = OpenAI(api_key="EMPTY", base_url=f"{base_url}/v1", timeout=3600)
         self.model_name = model_name
 
-    def translate(self, text: str, target_language: str) -> str:
-        messages = [
+    def _build_messages(self, text: str, target_language: str, instruction: str | None):
+        user_prompt = instruction or (
+            f"Translate the following text to {target_language} just return the translation. Text: {text}"
+        )
+        return [
             {"role": "system", "content": [{"type": "text", "text": "You are a helpful translation assistant."}]},
-            {"role": "user", "content": [{"type": "text", "text": f"Translate the following text to {target_language} just return the translation. Text: {text}"}]},
+            {"role": "user", "content": [{"type": "text", "text": user_prompt}]},
         ]
+
+    def translate(self, text: str, target_language: str, instruction: str | None = None) -> str:
+        messages = self._build_messages(text=text, target_language=target_language, instruction=instruction)
         resp = self.client.chat.completions.create(model=self.model_name, messages=messages)
         return resp.choices[0].message.content
 
-    def translate_stream(self, text: str, target_language: str):
-        messages = [
-            {"role": "system", "content": [{"type": "text", "text": "You are a helpful translation assistant."}]},
-            {"role": "user", "content": [{"type": "text", "text": f"Translate the following text to {target_language} just return the translation. Text: {text}"}]},
-        ]
+    def translate_stream(self, text: str, target_language: str, instruction: str | None = None):
+        messages = self._build_messages(text=text, target_language=target_language, instruction=instruction)
         stream = self.client.chat.completions.create(
             model=self.model_name,
             messages=messages,
@@ -62,7 +65,6 @@ class GemmaClient:
             delta = chunk.choices[0].delta
             if delta and delta.content:
                 yield delta.content
-
 
 
 

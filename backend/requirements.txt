@@ -3,3 +3,4 @@ openai
 pydub
 python-multipart
 uvicorn[standard]
+websockets

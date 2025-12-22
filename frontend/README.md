@@ -16,6 +16,8 @@ Vite + React frontend for the audio translation service.
    npm run dev
    ```
 
+Recording uses the backend WebSocket at `/ws/stream`, so make sure the backend points to a realtime transcription server (local or OpenAI).
+
 ## Build
 ```bash
 npm run build
