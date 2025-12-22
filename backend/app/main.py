@@ -2,6 +2,7 @@ import asyncio
 import json
 import os
 import time
+from collections import deque
 from io import BytesIO
 from queue import Queue
 from threading import Thread
@@ -59,10 +60,25 @@ def _extract_transcript(event: dict[str, Any]) -> tuple[str | None, bool]:
     return None, False
 
 
+def _normalize_chunk(text: str) -> str:
+    return " ".join(text.lower().split())
+
+
+def _is_meaningful_text(text: str, min_chars: int) -> bool:
+    count = 0
+    for char in text:
+        if char.isalnum():
+            count += 1
+            if count >= min_chars:
+                return True
+    return False
+
+
 def _run_translation(text: str, target_language: str, output: Queue[str | None]) -> None:
     instruction = (
         f"Translate the following transcript chunk to {target_language}. "
-        "Return only the translation of this chunk, do not repeat earlier text. "
+        "Return only the translation of this chunk with no extra commentary. "
+        "If the chunk is incomplete, still translate it as-is. "
         f"Chunk: {text}"
     )
     try:
@@ -77,6 +93,8 @@ def _run_translation(text: str, target_language: str, output: Queue[str | None])
 
 
 async def _stream_translation(text: str, target_language: str, send_event) -> None:
+    if not text.strip():
+        return
     output: Queue[str | None] = Queue()
     thread = Thread(
         target=_run_translation,
@@ -193,6 +211,8 @@ async def stream_translate(websocket: WebSocket):
     last_flush = time.monotonic()
     chunk_chars = int(os.environ.get("TRANSLATION_CHUNK_CHARS", "40"))
     chunk_interval = float(os.environ.get("TRANSLATION_CHUNK_INTERVAL", "0.7"))
+    min_alnum = int(os.environ.get("TRANSLATION_MIN_ALNUM", "2"))
+    recent_chunks = deque(maxlen=6)
 
     async def translation_worker() -> None:
         while True:
@@ -248,7 +268,7 @@ async def stream_translate(websocket: WebSocket):
                         continue
 
                     delta, is_final = _extract_transcript(event)
-                    if not delta:
+                    if not delta or not delta.strip():
                         continue
 
                     pending_text += delta
@@ -259,8 +279,11 @@ async def stream_translate(websocket: WebSocket):
                         chunk = pending_text.strip()
                         pending_text = ""
                         last_flush = now
-                        if chunk:
-                            await translate_queue.put(chunk)
+                        if chunk and _is_meaningful_text(chunk, min_alnum):
+                            normalized = _normalize_chunk(chunk)
+                            if normalized and normalized not in recent_chunks:
+                                recent_chunks.append(normalized)
+                                await translate_queue.put(chunk)
 
             translate_task = asyncio.create_task(translation_worker())
             client_task = asyncio.create_task(read_client())
@@ -273,8 +296,12 @@ async def stream_translate(websocket: WebSocket):
             for task in pending:
                 task.cancel()
 
-            if pending_text.strip():
-                await translate_queue.put(pending_text.strip())
+            final_chunk = pending_text.strip()
+            if final_chunk and _is_meaningful_text(final_chunk, min_alnum):
+                normalized = _normalize_chunk(final_chunk)
+                if normalized and normalized not in recent_chunks:
+                    recent_chunks.append(normalized)
+                    await translate_queue.put(final_chunk)
 
             await translate_queue.put(None)
             await translate_queue.join()
