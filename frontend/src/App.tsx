@@ -40,7 +40,6 @@ const encodeBase64 = (input: Int16Array) => {
 function App() {
   const [audioFile, setAudioFile] = useState<File | null>(null);
   const [targetLang, setTargetLang] = useState("Arabic");
-  const [transcript, setTranscript] = useState("");
   const [translation, setTranslation] = useState("");
   const [loading, setLoading] = useState<LoadingState>(null);
   const [error, setError] = useState("");
@@ -72,7 +71,6 @@ function App() {
   const processAudio = async (file: File | null = audioFile) => {
     if (!file) return setError("Record something first.");
     setError("");
-    setTranscript("");
     setTranslation("");
     setStatus("Translating...");
     setLoading("process");
@@ -125,7 +123,6 @@ function App() {
     try {
       setError("");
       setStatus("Connecting...");
-      setTranscript("");
       setTranslation("");
       setAudioFile(null);
       setLoading("recording");
@@ -136,9 +133,7 @@ function App() {
       ws.onmessage = (event) => {
         try {
           const payload = JSON.parse(event.data);
-          if (payload.type === "transcript_delta") {
-            setTranscript((prev) => prev + payload.text);
-          } else if (payload.type === "translation_delta") {
+          if (payload.type === "translation_delta") {
             setTranslation((prev) => prev + payload.text);
           } else if (payload.type === "status") {
             setStatus(payload.message || "");
@@ -218,7 +213,6 @@ function App() {
   const handleUpload = (file: File | null | undefined) => {
     if (!file) return;
     setError("");
-    setTranscript("");
     setTranslation("");
     setAudioFile(file);
     processAudio(file);
@@ -280,13 +274,6 @@ function App() {
               </label>
             </div>
           </div>
-
-          {transcript && (
-            <div className="translation-box show">
-              <div className="translation-label">Transcript</div>
-              <div className="translation-content">{transcript}</div>
-            </div>
-          )}
 
           {translation && (
             <div className="translation-box show">
