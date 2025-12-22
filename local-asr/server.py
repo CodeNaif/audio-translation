@@ -64,7 +64,6 @@ def _transcribe_pcm(pcm: bytes, sample_rate: int) -> str:
 
 
 async def _transcribe_loop(websocket, state):
-    last_text = ""
     last_run = 0.0
     min_bytes = int(SAMPLE_RATE * MIN_AUDIO_SEC * 2)
     max_bytes = int(SAMPLE_RATE * WINDOW_SEC * 2)
@@ -88,16 +87,14 @@ async def _transcribe_loop(websocket, state):
             continue
 
         if not text:
+            logger.debug("empty transcription result")
             continue
 
-        delta = _delta_text(last_text, text)
+        delta = _delta_text(state["last_text"], text)
         if delta:
             logger.info("transcript delta (%s chars)", len(delta))
             await websocket.send(json.dumps({"type": "transcript.delta", "delta": delta}))
-            last_text = text
-
-    if last_text:
-        await websocket.send(json.dumps({"type": "transcript.final", "text": last_text}))
+            state["last_text"] = text
 
 
 async def handler(websocket):
@@ -112,7 +109,7 @@ async def handler(websocket):
 
     logger.info("client connected path=%s", path or "<unknown>")
 
-    state = {"buffer": bytearray(), "closed": False}
+    state = {"buffer": bytearray(), "closed": False, "last_text": ""}
     worker = asyncio.create_task(_transcribe_loop(websocket, state))
 
     try:
@@ -139,6 +136,15 @@ async def handler(websocket):
                 logger.debug("ignored message type=%s", msg_type)
     finally:
         state["closed"] = True
+        if state["buffer"]:
+            try:
+                text = await asyncio.to_thread(_transcribe_pcm, bytes(state["buffer"]), SAMPLE_RATE)
+                if text:
+                    delta = _delta_text(state["last_text"], text)
+                    if delta:
+                        await websocket.send(json.dumps({"type": "transcript.final", "text": delta}))
+            except Exception as exc:
+                logger.warning("final transcribe failed: %s", exc)
         worker.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await worker
