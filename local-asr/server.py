@@ -32,7 +32,11 @@ logger = logging.getLogger("local_asr")
 client = OpenAI(api_key=WHISPER_API_KEY, base_url=f"{WHISPER_BASE_URL}/v1", timeout=60)
 
 
-def _delta_text(previous: str, current: str) -> str:
+def _delta_text(previous: str, current: str, append_only: bool = True) -> str:
+    if not current or current == previous:
+        return ""
+    if append_only and previous and not current.startswith(previous):
+        return ""
     match_len = 0
     for old_char, new_char in zip(previous, current):
         if old_char != new_char:
@@ -90,11 +94,14 @@ async def _transcribe_loop(websocket, state):
             logger.debug("empty transcription result")
             continue
 
-        delta = _delta_text(state["last_text"], text)
+        append_only = os.environ.get("ASR_APPEND_ONLY", "1") != "0"
+        delta = _delta_text(state["last_text"], text, append_only=append_only)
         if delta:
             logger.info("transcript delta (%s chars)", len(delta))
             await websocket.send(json.dumps({"type": "transcript.delta", "delta": delta}))
-            state["last_text"] = text
+        elif append_only and state["last_text"] and not text.startswith(state["last_text"]):
+            logger.debug("skipping non-append correction")
+        state["last_text"] = text
 
 
 async def handler(websocket):
