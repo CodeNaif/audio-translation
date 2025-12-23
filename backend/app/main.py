@@ -74,6 +74,30 @@ def _is_meaningful_text(text: str, min_chars: int) -> bool:
     return False
 
 
+def _is_redundant_chunk(
+    normalized: str,
+    recent_chunks: deque,
+    min_tokens: int,
+    overlap: float,
+) -> bool:
+    if not normalized:
+        return True
+    tokens = normalized.split()
+    for prev in recent_chunks:
+        if not prev:
+            continue
+        if normalized == prev or normalized in prev or prev in normalized:
+            return True
+        prev_tokens = prev.split()
+        if len(tokens) < min_tokens or len(prev_tokens) < min_tokens:
+            continue
+        common = len(set(tokens) & set(prev_tokens))
+        denom = min(len(set(tokens)), len(set(prev_tokens)))
+        if denom and common / denom >= overlap:
+            return True
+    return False
+
+
 def _run_translation(text: str, target_language: str, output: Queue[str | None]) -> None:
     instruction = (
         f"Translate the following transcript chunk to {target_language}. "
@@ -213,6 +237,8 @@ async def stream_translate(websocket: WebSocket):
     chunk_interval = float(os.environ.get("TRANSLATION_CHUNK_INTERVAL", "0.7"))
     min_alnum = int(os.environ.get("TRANSLATION_MIN_ALNUM", "2"))
     recent_chunks = deque(maxlen=6)
+    redundancy_overlap = float(os.environ.get("TRANSLATION_REDUNDANCY_OVERLAP", "0.85"))
+    redundancy_min_tokens = int(os.environ.get("TRANSLATION_REDUNDANCY_MIN_TOKENS", "3"))
 
     async def translation_worker() -> None:
         while True:
@@ -220,6 +246,7 @@ async def stream_translate(websocket: WebSocket):
             if text is None:
                 translate_queue.task_done()
                 break
+            await send_event({"type": "translation_chunk_start"})
             await _stream_translation(text=text, target_language=target_language, send_event=send_event)
             translate_queue.task_done()
 
@@ -281,7 +308,12 @@ async def stream_translate(websocket: WebSocket):
                         last_flush = now
                         if chunk and _is_meaningful_text(chunk, min_alnum):
                             normalized = _normalize_chunk(chunk)
-                            if normalized and normalized not in recent_chunks:
+                            if normalized and not _is_redundant_chunk(
+                                normalized,
+                                recent_chunks,
+                                redundancy_min_tokens,
+                                redundancy_overlap,
+                            ):
                                 recent_chunks.append(normalized)
                                 await translate_queue.put(chunk)
 
@@ -299,7 +331,12 @@ async def stream_translate(websocket: WebSocket):
             final_chunk = pending_text.strip()
             if final_chunk and _is_meaningful_text(final_chunk, min_alnum):
                 normalized = _normalize_chunk(final_chunk)
-                if normalized and normalized not in recent_chunks:
+                if normalized and not _is_redundant_chunk(
+                    normalized,
+                    recent_chunks,
+                    redundancy_min_tokens,
+                    redundancy_overlap,
+                ):
                     recent_chunks.append(normalized)
                     await translate_queue.put(final_chunk)
 

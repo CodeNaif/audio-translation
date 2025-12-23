@@ -94,7 +94,7 @@ async def _transcribe_loop(websocket, state):
             logger.debug("empty transcription result")
             continue
 
-        append_only = os.environ.get("ASR_APPEND_ONLY", "1") != "0"
+        append_only = os.environ.get("ASR_APPEND_ONLY", "0") != "0"
         delta = _delta_text(state["last_text"], text, append_only=append_only)
         if delta:
             logger.info("transcript delta (%s chars)", len(delta))

@@ -44,20 +44,23 @@ function App() {
   const [loading, setLoading] = useState<LoadingState>(null);
   const [error, setError] = useState("");
   const [status, setStatus] = useState<string>("");
+  const [useStreaming, setUseStreaming] = useState(true);
   const wsRef = useRef<WebSocket | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const processorRef = useRef<ScriptProcessorNode | null>(null);
   const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
+  const pendingSpaceRef = useRef(false);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
+  const recordingModeRef = useRef<"stream" | "upload" | null>(null);
 
   useEffect(() => {
     return () => {
-      wsRef.current?.close();
-      processorRef.current?.disconnect();
-      sourceRef.current?.disconnect();
-      audioContextRef.current?.close();
-      mediaStreamRef.current?.getTracks().forEach((t) => t.stop());
+      stopStreaming();
+      stopLocalRecording();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -125,7 +128,30 @@ function App() {
       setStatus("Connecting...");
       setTranslation("");
       setAudioFile(null);
+      pendingSpaceRef.current = false;
       setLoading("recording");
+      recordingModeRef.current = useStreaming ? "stream" : "upload";
+      if (!useStreaming) {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+          ? "audio/webm;codecs=opus"
+          : "audio/webm";
+        const recorder = new MediaRecorder(stream, { mimeType });
+        mediaRecorderRef.current = recorder;
+        chunksRef.current = [];
+        recorder.ondataavailable = (event) => chunksRef.current.push(event.data);
+        recorder.onstop = () => {
+          const ext = mimeType.includes("ogg") ? "ogg" : "webm";
+          const blob = new Blob(chunksRef.current, { type: mimeType });
+          const file = new File([blob], `recording.${ext}`, { type: mimeType });
+          setAudioFile(file);
+          processAudio(file);
+        };
+        recorder.start();
+        setStatus("Recording...");
+        return;
+      }
+
       const wsUrl = buildWsUrl(API_URL);
       const ws = new WebSocket(wsUrl);
       wsRef.current = ws;
@@ -133,8 +159,20 @@ function App() {
       ws.onmessage = (event) => {
         try {
           const payload = JSON.parse(event.data);
-          if (payload.type === "translation_delta") {
-            setTranslation((prev) => prev + payload.text);
+          if (payload.type === "translation_chunk_start") {
+            pendingSpaceRef.current = true;
+          } else if (payload.type === "translation_delta") {
+            setTranslation((prev) => {
+              if (!payload.text) return prev;
+              if (!pendingSpaceRef.current) return prev + payload.text;
+              pendingSpaceRef.current = false;
+              const needsSpace =
+                prev &&
+                /[\p{L}\p{N}]$/u.test(prev) &&
+                !/^\s/.test(payload.text) &&
+                !/^[\p{P}\p{S}]/u.test(payload.text);
+              return needsSpace ? `${prev} ${payload.text}` : prev + payload.text;
+            });
           } else if (payload.type === "status") {
             setStatus(payload.message || "");
           } else if (payload.type === "error") {
@@ -147,11 +185,11 @@ function App() {
 
       ws.onerror = () => {
         setError("WebSocket connection failed.");
-        stopRecording();
+        stopStreaming();
       };
 
       ws.onclose = () => {
-        stopRecording();
+        stopStreaming();
       };
 
       ws.onopen = async () => {
@@ -192,7 +230,16 @@ function App() {
     }
   };
 
-  const stopRecording = () => {
+  const stopLocalRecording = () => {
+    mediaRecorderRef.current?.stop();
+    mediaRecorderRef.current?.stream.getTracks().forEach((t) => t.stop());
+    mediaRecorderRef.current = null;
+    chunksRef.current = [];
+    setLoading(null);
+    setStatus("");
+  };
+
+  const stopStreaming = () => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({ type: "stop" }));
     }
@@ -206,8 +253,18 @@ function App() {
     audioContextRef.current = null;
     mediaStreamRef.current?.getTracks().forEach((t) => t.stop());
     mediaStreamRef.current = null;
+    pendingSpaceRef.current = false;
     setLoading(null);
     setStatus("");
+  };
+
+  const stopRecording = () => {
+    if (recordingModeRef.current === "upload") {
+      stopLocalRecording();
+    } else {
+      stopStreaming();
+    }
+    recordingModeRef.current = null;
   };
 
   const handleUpload = (file: File | null | undefined) => {
@@ -229,6 +286,13 @@ function App() {
 
         <section className="panel glass">
           <div className="panel-head">
+            <button
+              className="ghost-run"
+              onClick={() => setUseStreaming((prev) => !prev)}
+              disabled={loading === "recording"}
+            >
+              {useStreaming ? "Streaming: On" : "Streaming: Off"}
+            </button>
             <label className="upload-mini">
               <input
                 type="file"
