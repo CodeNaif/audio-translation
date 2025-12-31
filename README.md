@@ -8,13 +8,22 @@ Real-time audio translation app with a FastAPI backend and a Vite + React UI. It
 
 ## Demo assets
 Recording example:
-<video src="assets/video_test_the_system.mp4" controls width="600"></video>
+
+
+
+https://github.com/user-attachments/assets/cd7b2071-c36b-445f-9e93-0c562978b8c6
+
+
 
 Upload example (Hindi audio):
-<video src="assets/upload_audio_system.mp4" controls width="600"></video>
+
+
+https://github.com/user-attachments/assets/288ed34e-a14b-4fa1-bfcd-8f4e756a1377
+
 
 Sample Hindi audio file you can try:
-<audio src="what_do_you_do_in_hindi.wav" controls></audio>
+[what_do_you_do_in_hindi.wav](https://github.com/user-attachments/files/24396056/what_do_you_do_in_hindi.wav)
+
 
 ## Prerequisites
 - Python 3.11.9 recommended (3.10+ supported). Python 3.13 may fail due to `pydub`/`audioop`.
@@ -95,3 +104,5 @@ npm run dev
 ## How it works
 1. The UI records or uploads audio and sends it to the backend.
 2. The backend transcribes audio with Whisper and streams the translation from Gemma.
+
+If you run into any problems, feel free to reach out or open an issue in the repo.
