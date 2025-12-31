@@ -1,0 +1,13 @@
+[project]
+name = "audio-translation-backend"
+version = "0.1.0"
+description = "FastAPI backend for audio translation"
+requires-python = ">=3.10,<3.13"
+dependencies = [
+  "fastapi",
+  "openai",
+  "pydub",
+  "python-dotenv",
+  "python-multipart",
+  "uvicorn[standard]",
+]

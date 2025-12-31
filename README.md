@@ -1,32 +1,86 @@
 # Audio Translation
 
-Real-time audio translation app with a FastAPI backend and a Vite + React UI.
+Real-time audio translation app with a FastAPI backend and a Vite + React UI. It auto-detects the spoken language during transcription, then translates the text to English or Arabic. You can extend the UI to support 150+ languages that Gemma can handle by adding new language options.
 
 ## Repository layout
 - `backend/`: FastAPI service for transcription + translation
 - `frontend/`: React UI
 
+## Demo assets
+Recording example:
+<video src="assets/video_test_the_system.mp4" controls width="600"></video>
+
+Upload example (Hindi audio):
+<video src="assets/upload_audio_system.mp4" controls width="600"></video>
+
+Sample Hindi audio file you can try:
+<audio src="what_do_you_do_in_hindi.wav" controls></audio>
+
 ## Prerequisites
-- Python 3.10+
+- Python 3.11.9 recommended (3.10+ supported). Python 3.13 may fail due to `pydub`/`audioop`.
 - Node.js 18+
 - `ffmpeg` installed (used by `pydub` to convert audio)
-- OpenAI-compatible inference servers for:
-  - Whisper (default: `http://0.0.0.0:8000`)
-  - Gemma (default: `http://0.0.0.0:8001`)
 
-## Backend setup
+## Hardware Requirements
+
+- Recommended: **2× GPUs (24GB VRAM each or higher)**
+- Designed for large models and multi-GPU workloads
+
+If your hardware does not meet these requirements, you can still try the project using
+**smaller / lightweight models**, but change the models in the .env, although performance and accuracy may be reduced.
+
+## Configuration (.env)
+Use a single env file at the repo root for both Docker Compose and the backend.
+```bash
+cp .env.example .env
+# Edit .env with your HUGGING_FACE_HUB_TOKEN, models, ports, and base URLs
+```
+
+## Inference servers (Docker Compose)
+The dev compose file builds a `vllm-audio` image and runs Whisper + Gemma.
+```bash
+docker compose --env-file .env -f backend/dev_env/docker-compose.yaml build whisper
+docker compose --env-file .env -f backend/dev_env/docker-compose.yaml up -d
+```
+Notes:
+- Requires Linux host networking (`network_mode: host`).
+- Use `WHISPER_CUDA_VISIBLE_DEVICES` in `.env` to select a GPU.
+
+Stop the services:
+```bash
+docker compose --env-file .env -f backend/dev_env/docker-compose.yaml stop
+```
+
+First time only: you must run the `build whisper` command before `up`.
+
+## Backend setup (uv) (recommended)
+Uses `backend/pyproject.toml` and `backend/uv.lock`.
+```bash
+cd backend
+uv sync --python 3.11.9
+# Ensure .env exists at the repo root
+uv run uvicorn app.main:app --reload --port 9100
+```
+
+## Backend setup (venv)
 ```bash
 cd backend
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 
-# Optional overrides
-export WHISPER_BASE_URL="http://0.0.0.0:8000"
-export WHISPER_MODEL="openai/whisper-large-v3"
-export GEMMA_BASE_URL="http://0.0.0.0:8001"
-export GEMMA_MODEL="google/gemma-3-4b-it"
+# Required configuration
+# Ensure .env exists at the repo root
+uvicorn app.main:app --reload --port 9100
+```
 
+## Backend setup (conda)
+```bash
+conda create -n audio-translation python=3.11.9
+conda activate audio-translation
+cd backend
+pip install -r requirements.txt
+# Ensure .env exists at the repo root
 uvicorn app.main:app --reload --port 9100
 ```
 

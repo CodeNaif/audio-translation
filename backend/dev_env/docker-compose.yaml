@@ -1,0 +1,39 @@
+services:
+  whisper:
+    image: ${WHISPER_IMAGE:?set WHISPER_IMAGE in .env}
+    build:
+      context: .
+      dockerfile: vllm-audio.Dockerfile
+    command:
+      - "--model"
+      - "${WHISPER_MODEL:?set WHISPER_MODEL in .env}"
+      - "--port"
+      - "${WHISPER_PORT:?set WHISPER_PORT in .env}"
+    environment:
+      - HUGGING_FACE_HUB_TOKEN=${HUGGING_FACE_HUB_TOKEN:?set HUGGING_FACE_HUB_TOKEN in .env}
+      - CUDA_VISIBLE_DEVICES=${WHISPER_CUDA_VISIBLE_DEVICES:?set WHISPER_CUDA_VISIBLE_DEVICES in .env}
+    volumes:
+      - ${HF_CACHE_DIR:?set HF_CACHE_DIR in .env}:/root/.cache/huggingface
+    gpus: "all"
+    ipc: host
+    network_mode: host
+
+  gemma:
+    image: ${GEMMA_IMAGE:?set GEMMA_IMAGE in .env}
+    command:
+      - "--model"
+      - "${GEMMA_MODEL:?set GEMMA_MODEL in .env}"
+      - "--max-model-len"
+      - "${GEMMA_MAX_MODEL_LEN:?set GEMMA_MAX_MODEL_LEN in .env}"
+      - "--port"
+      - "${GEMMA_PORT:?set GEMMA_PORT in .env}"
+    environment:
+      - HUGGING_FACE_HUB_TOKEN=${HUGGING_FACE_HUB_TOKEN:?set HUGGING_FACE_HUB_TOKEN in .env}
+    volumes:
+      - ${HF_CACHE_DIR:?set HF_CACHE_DIR in .env}:/root/.cache/huggingface
+    gpus: "all"
+    ipc: host
+    network_mode: host
+
+volumes:
+  hf-cache:
